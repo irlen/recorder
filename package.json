@@ -1,0 +1,58 @@
+{
+  "name": "app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "dependencies": {
+    "@emotion/core": "^10.0.35",
+    "@emotion/styled": "^10.0.27",
+    "@testing-library/jest-dom": "^4.2.4",
+    "@testing-library/react": "^9.3.2",
+    "@testing-library/user-event": "^7.1.2",
+    "antd": "^4.6.4",
+    "electron": "^10.1.1",
+    "electron-is-dev": "^1.2.0",
+    "react": "^16.13.1",
+    "react-custom-scrollbars": "^4.2.1",
+    "react-dom": "^16.13.1",
+    "react-icons": "^3.11.0",
+    "react-redux": "^7.2.1",
+    "react-router-dom": "^5.2.0",
+    "react-scripts": "3.4.3",
+    "redux": "^4.0.5",
+    "redux-logger": "^3.0.6",
+    "redux-promise": "^0.6.0",
+    "redux-thunk": "^2.3.0"
+  },
+  "scripts": {
+    "start": "craco start",
+    "haha": "electron .",
+    "build": "craco build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "dev": "concurrently  \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\" "
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@craco/craco": "^5.6.4",
+    "concurrently": "^5.3.0",
+    "craco-less": "^1.17.0",
+    "cross-env": "^7.0.2",
+    "wait-on": "^5.2.0"
+  },
+  "license": "MIT"
+}
