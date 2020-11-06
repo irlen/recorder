@@ -27,6 +27,7 @@ function createWindow(){
     // resizable: false,
     webPreferences:{
       nodeIntegration: true, //可以在react中使用node
+      enableRemoteModule: true //remote模块可以在渲染进程中使用electron的部分api
     }
   })
   const urlLocation = isDev?"http://localhost:3000":"dummy";

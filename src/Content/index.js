@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { connect } from 'react-redux'
-import Nav from '../Nav'
-import Content from '../Content'
 
-function Home (props){
+function Content (props){
   const [ visible, setVisible ] = useState(false)
   const [ windowH, setWindowH] = useState(0)
   const [ _isMounted,set_isMounted] = useState(true)
@@ -21,19 +19,15 @@ function Home (props){
   },[props.windowH])
 
   return (
-    <div style={{padding:"10px 20px 10px 20px"}}>
-      <div style={{width:"100%",height:"autop",display:"flex"}}>
-        <div style={{flex:"0 0  200px"}}>
-          <Nav />
-        </div>
-        <div style={{flex:"1 1 auto"}}>
-          <Content />
-        </div>
+      <div>
+          右边内容
       </div>
-    </div>
   )
+  
 }
-const mapStateToProps = (state)=>({
-  windowH: state.windowH.windowH
-})
-export default connect(mapStateToProps,null)(Home)
+
+
+  const mapStateToProps = (state)=>({
+    windowH: state.windowH.windowH
+  })
+  export default connect(mapStateToProps,null)(Content)
