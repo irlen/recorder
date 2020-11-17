@@ -19,7 +19,6 @@ if (!gotTheLock) {
 }
 
 function createWindow(){
-  console.log("8888888888888888888888888888888888888888888888888888888888")
   mainWindow = new BrowserWindow({
     width: 1024,
     height: 800,

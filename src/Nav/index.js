@@ -6,6 +6,8 @@ import { v4 } from 'uuid'
 import _ from 'lodash'
 import useContextMenu from '../hooks/useContextMenu'
 
+import { wyAxiosPost } from '../utils/wyAxios'
+
 const { DirectoryTree } = Tree;
 
 const data = [
@@ -44,17 +46,17 @@ const data = [
         ],
     },
     {
-        title: 'parent 1',
+        title: 'parent1',
         key: '0-1',
         isLeaf: false,
         children: [
             {
-                title: 'leaf 1-0',
+                title: 'leaf1-0',
                 key: '0-1-0',
                 isLeaf: true,
             },
             {
-                title: 'leaf 1-1',
+                title: 'leaf1-1',
                 key: '0-1-1',
                 isLeaf: true,
             },
@@ -110,6 +112,9 @@ function Nav(props) {
         }
         if (visible) {
             doAdd()
+        }
+        if(deleteVisible){
+            doDelete()
         }
     }
     useEffect(() => {
@@ -169,7 +174,6 @@ function Nav(props) {
     //新增文件夹或者文件
     const preAdd = (type) => {
         const { isLeaf } = type
-        console.log(isLeaf)
         if (isLeaf) {
             setAddType("file")
         } else {
@@ -184,8 +188,16 @@ function Nav(props) {
             setDeleteType("folder")
         }
     }
+    //检验同级重名
+    const isExist = (comonPath)=>{
+        return new Promise((resolve,reject)=>{
+            wyAxiosPost('nav/isexist',{comonPath:comonPath},(result)=>{
+                console.log(result)
+            })
+        })
+    }
     //新增
-    const doAdd = () => {
+    const doAdd = async() => {
         if (!curName) {
             message.warning("请输入名称")
             return
@@ -203,53 +215,142 @@ function Nav(props) {
         }
         //加到treeData里面
         const newId = v4()
-        const new_file = {
-            title: curName,
-            key: newId,
-            isLeaf: addType === "file" ? true : false,
-        }
+        let newTreeData = []
+        let newFile = {}
+        const { key } = curEdit
         if (curEdit) {
             //文件夹内新增
-            const { key } = curEdit
             const curTreeData = _.cloneDeep(treeData)
-            const doInsert = (arr, key, new_file) => {
+            let filePath = []
+            const doInsert = (arr, key,apath) => {
+                const initFilePath = _.cloneDeep(apath)
                 for (let atom of arr) {
+                    const curFilePath = _.cloneDeep(initFilePath)
+                    curFilePath.push(atom.title)
                     if (atom.key === key) {
+                        //todo 比较同意文件夹内的文件是否有重名
+                        curFilePath.push(curName)
                         if(!atom.children){
                             atom.children = []
                         }
+                        
+                        const new_file = {
+                            title: curName,
+                            key: newId,
+                            isLeaf: addType === "file" ? true : false,
+                            path: _.cloneDeep(curFilePath).join("/")
+                        }
+                        newFile = _.cloneDeep(new_file)
                         atom.children.push(new_file)
+                        filePath = curFilePath
                         return
-                    }
-                    if (atom.children && atom.children.length > 0) {
-                        doInsert(atom.children, key, new_file)
+                    }else{
+                        if (atom.children && atom.children.length > 0) {
+                            doInsert(atom.children, key,curFilePath)
+                        }
                     }
                 }
             }
-            doInsert(curTreeData, key, new_file)
-            setTreeData(curTreeData)
-            setExpandedKeys([...expandedKeys, key])
-            setSelectedKeys([new_file.key])
-            //todo如果是文件，需要在右边选中并显示出来
+            doInsert(curTreeData, key,[])
+            //通过filePath查是否有同名的
+            const filePathArr = _.cloneDeep(filePath)
+            const comonPath = filePathArr.join("/")
+            //查询数据库中同级别文件下是否有同名文件
+            isExist(comonPath)
+
+
+        
+
+ 
+            
+
+
+
+
+
+            newTreeData = _.cloneDeep(curTreeData)
         } else {
             //最外层新增
             //todo同层名称去重
+            const new_file = {
+                title: curName,
+                key: newId,
+                isLeaf: addType === "file" ? true : false,
+                path: curName
+            }
+            newFile = _.cloneDeep(new_file)
             const newData = [...treeData, new_file]
-            console.log(new_file)
-            setTreeData(newData)
-            setSelectedKeys([new_file.key])
-            //todo存数据库
-            //todo如果是文件，需要在右边选中并显示出来
+            newTreeData = _.cloneDeep(newData)
         }
-        handleCancel()
+        //todo存数据库
+        wyAxiosPost('nav/save',{treeData:newTreeData,fileData: newFile},(result)=>{
+            const {code,msg} = result
+            if(code === 0){
+                message.warning(msg)
+                return
+            }
+            setTreeData(newTreeData)
+            if(key){
+                setExpandedKeys([...expandedKeys, key])
+            }
+            if(addType === "file"){
+                setSelectedKeys([newId])
+                //todo如果是文件，需要在右边选中并显示出来
+            }
+            handleCancel()
+        })
     }
     //删除
     const doDelete = () => {
-
+        const { isLeaf, key } = curEdit
+        const curTreeData = _.cloneDeep(treeData)
+        if(isLeaf){
+            //删除对象为文件时
+            const doRe = (arr, key) => {
+                for (let index in arr) {
+                    if (arr[index].key === key) {
+                        arr.splice(index,1)
+                        //todo 数据库中和文件夹里面要删除这项
+                        setTreeData(curTreeData)
+                        deleteHandleCancel()
+                        return
+                    }else if(arr[index]["children"] && arr[index]["children"].length>0){
+                        doRe(arr[index]["children"],key)
+                    }
+                }
+            }
+            doRe(curTreeData,key)
+        }else{
+            //删除的为文件夹时
+            const doInRe = (arr,index)=>{
+                if(!arr[index]["children"] || (arr[index]["children"] && arr[index]["children"].length===0)){
+                    //todo数据库和文件要做删除(子文件夹为空文件夹或者文件)
+                    return
+                }else{
+                    const atomArr = arr[index]["children"]
+                    for(let atomIndex in atomArr){
+                        doInRe(atomArr,atomIndex)
+                    }
+                }
+            }
+            const doRe = (arr, key) => {
+                for (let index in arr) {
+                    if (arr[index].key === key) {
+                        doInRe(arr, index)
+                        arr.splice(index,1)
+                    }else if(arr[index]["children"] && arr[index]["children"].length>0){
+                        doRe(arr[index]["children"],key)
+                    } 
+                }
+                setTreeData(curTreeData)
+                deleteHandleCancel()
+            }
+            doRe(curTreeData,key)
+        }
     }
 
     return (
-        <div style={{ background: "#f9f9f9", position: "relative" }}>
+        <div style={{ background: "#f9f9f9", position: "relative",borderRight:"1px solid #f0f0f0"}}>
             <Scrollbars style={{ "width": "100%", "height": windowH - 20 + "px" }}>
                 <DirectoryTree
                     ref={treeRef}
