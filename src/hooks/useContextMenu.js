@@ -5,8 +5,6 @@ const { Menu, MenuItem } = remote
 
 const useContextMenu = (itemArr,dependence)=>{
     const menu = new Menu()
-
-    
     useEffect(()=>{
         if(dependence){
             let itemList = []
@@ -24,8 +22,6 @@ const useContextMenu = (itemArr,dependence)=>{
             })
         }
     },[dependence])
-
-    
 }
 
 export default useContextMenu

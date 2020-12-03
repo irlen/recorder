@@ -4,12 +4,14 @@ import Scrollbars from 'react-custom-scrollbars'
 import { Tree, Button, Modal, Input, message } from 'antd';
 import { v4 } from 'uuid'
 import _ from 'lodash'
-import useContextMenu from '../hooks/useContextMenu'
 
+
+import useContextMenu from '../hooks/useContextMenu'
 import { wyAxiosPost } from '../utils/wyAxios'
+import { setActiveKey, setDeleteKey } from '../redux/actions'
 
 const { DirectoryTree } = Tree;
-
+const { ipcRenderer } = window.require("electron")
 const data = [
     {
         title: 'parent 0',
@@ -64,13 +66,13 @@ const data = [
     },
 ];
 function Nav(props) {
-    const [treeData, setTreeData] = useState(data)
+    const [treeData, setTreeData] = useState([])
     const [visible, setVisible] = useState(false)
     const [deleteVisible, setDeleteVisible] = useState(false)
     const [windowH, setWindowH] = useState(0)
     const [_isMounted, set_isMounted] = useState(true)
     const [curEdit, setCurEdit] = useState(null) //右键编辑文件的信息
-    const [selectedKeys, setSelectedKeys] = useState(["0-s-1"])
+    const [selectedKeys, setSelectedKeys] = useState([])
     const [expandedKeys, setExpandedKeys] = useState([])
     const [curName, setCurName] = useState("") //当前操作的文件的名字
     const [addType, setAddType] = useState(null)
@@ -101,10 +103,20 @@ function Nav(props) {
         if (props.windowH) {
             setWindowH(props.windowH)
         }
+        getTreeData()
         return () => {
             set_isMounted(false)
         }
     }, [])
+    const getTreeData = ()=>{
+        wyAxiosPost('nav/getTreeData',{},result=>{
+            const { code, data } = result
+            const curData = JSON.parse(data)
+            if(code === 1){
+                setTreeData(curData)
+            }
+        })
+    }
     const enterEvent = function (e) {
         let event = e || event
         if (event.keyCode !== 13) {
@@ -117,11 +129,25 @@ function Nav(props) {
             doDelete()
         }
     }
+    //监听原生菜单事件
+    useEffect(()=>{
+        const newFile = ()=>{
+            preAdd({isLeaf: true})
+        }
+        const newFolder = ()=>{
+            preAdd({isLeaf: false})
+        }
+        ipcRenderer.on('new-file',newFile)
+        ipcRenderer.on('new-folder',newFolder)
+        return ()=>{
+            ipcRenderer.removeListener('new-file',newFile)
+            ipcRenderer.removeListener('new-folder',newFolder)
+        }
+    })
     useEffect(() => {
         window.addEventListener('keydown', enterEvent)
         return () => { window.removeEventListener("keydown", enterEvent) }
     })
-
     useEffect(() => {
         if (props.windowH && _isMounted) {
             setWindowH(props.windowH)
@@ -135,14 +161,58 @@ function Nav(props) {
             deleteShowModal()
         }
     }, [addType,deleteType])
+    useEffect(()=>{
+        const curSelectedKeys = []
+        curSelectedKeys.push(props.activeKey)
+        //此处查询需要展开的key
+
+        const rollGet = (arr,key,keyList,callback)=>{
+            for(let atom of arr){
+                let curKeyList = _.cloneDeep(keyList)
+               if(atom.key === key){ 
+                callback(curKeyList)  
+                break
+               }else{
+                   if(atom.children && atom.children.length>0){
+                       curKeyList.push(atom.key)
+                    rollGet(atom.children,key,curKeyList,callback)
+                   }else{
+                       curKeyList = []
+                   }
+               }     
+            }
+        }
+        if(treeData && treeData.length>0){
+            rollGet(treeData,props.activeKey,[],(keyList)=>{
+                if(expandedKeys && expandedKeys.length>0){
+                    const curExpandedKeys = _.cloneDeep(expandedKeys)
+                    for(let akey of keyList){
+                        const index = _.findIndex(expandedKeys,o=>{
+                            return o === akey
+                        })
+                        if(index === -1){
+                            curExpandedKeys.push(akey)
+                        }
+                    }
+                    setExpandedKeys(curExpandedKeys)
+                }else{
+                    setExpandedKeys(keyList)
+                }
+            })
+        }
+        setSelectedKeys(curSelectedKeys)
+    },[props.activeKey])
     //右键事件
     useContextMenu({ folder: folderContextMenu, file: fileContextMenu }, curEdit)
     const showContext = (event, node) => {
         setCurEdit(node)
     }
-
     const onSelect = (keys, event) => {
         setSelectedKeys(keys)
+        const {node} = event
+        if(node && node.isLeaf){
+            props.setActiveKey(node.key)
+        }
     };
     const onExpand = (keys, node) => {
         setExpandedKeys(keys)
@@ -192,7 +262,7 @@ function Nav(props) {
     const isExist = (comonPath)=>{
         return new Promise((resolve,reject)=>{
             wyAxiosPost('nav/isexist',{comonPath:comonPath},(result)=>{
-                console.log(result)
+                resolve(result)
             })
         })
     }
@@ -217,9 +287,13 @@ function Nav(props) {
         const newId = v4()
         let newTreeData = []
         let newFile = {}
-        const { key } = curEdit
+        let key = null
+        if(curEdit){
+            key = curEdit["key"]
+        }
         if (curEdit) {
             //文件夹内新增
+            
             const curTreeData = _.cloneDeep(treeData)
             let filePath = []
             const doInsert = (arr, key,apath) => {
@@ -228,7 +302,7 @@ function Nav(props) {
                     const curFilePath = _.cloneDeep(initFilePath)
                     curFilePath.push(atom.title)
                     if (atom.key === key) {
-                        //todo 比较同意文件夹内的文件是否有重名
+                        //比较同意文件夹内的文件是否有重名
                         curFilePath.push(curName)
                         if(!atom.children){
                             atom.children = []
@@ -256,18 +330,12 @@ function Nav(props) {
             const filePathArr = _.cloneDeep(filePath)
             const comonPath = filePathArr.join("/")
             //查询数据库中同级别文件下是否有同名文件
-            isExist(comonPath)
-
-
-        
-
- 
-            
-
-
-
-
-
+            const cunzai = await isExist(comonPath)
+            const checkfor = cunzai.data.isExist
+            if(checkfor){
+                message.warning("抱歉，存在同名文件，请重新命名")
+                return
+            }
             newTreeData = _.cloneDeep(curTreeData)
         } else {
             //最外层新增
@@ -282,7 +350,7 @@ function Nav(props) {
             const newData = [...treeData, new_file]
             newTreeData = _.cloneDeep(newData)
         }
-        //todo存数据库
+        //存数据库
         wyAxiosPost('nav/save',{treeData:newTreeData,fileData: newFile},(result)=>{
             const {code,msg} = result
             if(code === 0){
@@ -293,9 +361,10 @@ function Nav(props) {
             if(key){
                 setExpandedKeys([...expandedKeys, key])
             }
+            setSelectedKeys([newId])
             if(addType === "file"){
-                setSelectedKeys([newId])
-                //todo如果是文件，需要在右边选中并显示出来
+                //如果是文件，需要在右边选中并显示出来
+                props.setActiveKey(newId)
             }
             handleCancel()
         })
@@ -304,15 +373,30 @@ function Nav(props) {
     const doDelete = () => {
         const { isLeaf, key } = curEdit
         const curTreeData = _.cloneDeep(treeData)
+        const delete_by_key = (keyList,treeData,key,callback)=>{
+            wyAxiosPost('nav/delete',{keyList:keyList,treeData:treeData,curKey:key},(result)=>{
+                callback(result)
+            })
+        }
         if(isLeaf){
             //删除对象为文件时
             const doRe = (arr, key) => {
                 for (let index in arr) {
                     if (arr[index].key === key) {
                         arr.splice(index,1)
-                        //todo 数据库中和文件夹里面要删除这项
-                        setTreeData(curTreeData)
-                        deleteHandleCancel()
+                        //删除数据库中该文件，更新数据库中的树数据，删除实体文件夹
+                        delete_by_key([key],curTreeData,key,(result)=>{
+                            const {data,msg} = result 
+                            if(data){
+                                setTreeData(curTreeData)
+                                deleteHandleCancel()
+                                message.success(msg)
+                            }else{
+                                message.warning(msg)
+                            }
+                            //传入redux，将tabs中该文件删除
+                            props.setDeleteKey(key)
+                        })
                         return
                     }else if(arr[index]["children"] && arr[index]["children"].length>0){
                         doRe(arr[index]["children"],key)
@@ -322,30 +406,40 @@ function Nav(props) {
             doRe(curTreeData,key)
         }else{
             //删除的为文件夹时
+            const deleteArr = []
             const doInRe = (arr,index)=>{
                 if(!arr[index]["children"] || (arr[index]["children"] && arr[index]["children"].length===0)){
-                    //todo数据库和文件要做删除(子文件夹为空文件夹或者文件)
                     return
                 }else{
                     const atomArr = arr[index]["children"]
                     for(let atomIndex in atomArr){
+                        deleteArr.push(atomArr[atomIndex]["key"])
                         doInRe(atomArr,atomIndex)
                     }
-                }
+                } 
             }
             const doRe = (arr, key) => {
                 for (let index in arr) {
                     if (arr[index].key === key) {
+                        deleteArr.push(key)
                         doInRe(arr, index)
                         arr.splice(index,1)
                     }else if(arr[index]["children"] && arr[index]["children"].length>0){
                         doRe(arr[index]["children"],key)
                     } 
                 }
-                setTreeData(curTreeData)
-                deleteHandleCancel()
             }
             doRe(curTreeData,key)
+            delete_by_key(deleteArr,curTreeData,key,(result)=>{
+                const {data,msg} = result 
+                if(data){
+                    setTreeData(curTreeData)
+                    deleteHandleCancel()
+                    message.success(msg)
+                }else{
+                    message.warning(msg)
+                }
+            })
         }
     }
 
@@ -362,10 +456,13 @@ function Nav(props) {
                     onRightClick={({ event, node }) => { showContext(event, node) }}
                 />
             </Scrollbars>
-            <div style={{ position: "absolute", bottom: "0px" }}>
-                <Button onClick={() => { preAdd({ isLeaf: false }) }}>添加文件夹</Button>
-                <Button onClick={() => { preAdd({ isLeaf: true }) }}>添加文件</Button>
-            </div>
+            {
+                // <div style={{ position: "absolute", bottom: "0px" }}>
+                //     <Button onClick={() => { preAdd({ isLeaf: false }) }}>添加文件夹</Button>
+                //     <Button onClick={() => { preAdd({ isLeaf: true }) }}>添加文件</Button>
+                // </div>
+            }
+            
             <Modal
                 title="名称"
                 visible={visible}
@@ -392,6 +489,11 @@ function Nav(props) {
 
 
 const mapStateToProps = (state) => ({
-    windowH: state.windowH.windowH
+    windowH: state.windowH.windowH,
+    activeKey: state.fileInfo.activeKey
 })
-export default connect(mapStateToProps, null)(Nav)
+const mapDispatchToProps = (dispatch)=>({
+    setActiveKey: (activeKey)=>{dispatch(setActiveKey(activeKey))},
+    setDeleteKey: (deleteKey)=>{dispatch(setDeleteKey(deleteKey))}
+})
+export default connect(mapStateToProps, mapDispatchToProps)(Nav)
